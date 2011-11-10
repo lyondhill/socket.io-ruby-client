@@ -3,7 +3,7 @@ $:.push File.expand_path("../lib", __FILE__)
 require 'socketIO'
 
 Gem::Specification.new do |s|
-  s.name        = "socket.io-client"
+  s.name        = "socketio-client"
   s.version     = SocketIO::Client::VERSION
   s.authors     = ["Lyon"]
   s.email       = ["lyon@delorum.com"]
