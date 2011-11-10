@@ -2,7 +2,6 @@ require 'web_socket'
 require 'rest_client'
 require 'json'
 require 'parser'
-require 'pp'
 
 module SocketIO
 
