@@ -65,7 +65,6 @@ module SocketIO
           case decoded[:type]
           when '0'
             @on_disconnect.call if @on_disconnect
-            pp Thread.current
           when '1'
             @on_connect.call if @on_connect
           when '2'
