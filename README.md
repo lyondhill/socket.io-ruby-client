@@ -15,9 +15,9 @@ This client currently supports:
 ## How to use:
 
 ```ruby
-require 'socketIO'
+require 'SocketIO'
 
-client = SocketIO.connect("localhost") do
+client = SocketIO.connect("http://localhost") do
   before_start do
     on_message {|message| puts "incoming message: #{message}"}
     on_event('news') { |data| puts data.first} # data is an array fo things.
@@ -32,9 +32,9 @@ You can start the socket io syncronously and then continue with your work
 this crates threads so be careful.
 
 ```ruby
-require 'socketIO'
+require 'SocketIO'
 
-client = SocketIO.connect("localhost", sync: true) do
+client = SocketIO.connect("http://localhost", sync: true) do
   before_start do
     on_message {|message| puts message}
     on_disconnect {puts "I GOT A DISCONNECT"}
