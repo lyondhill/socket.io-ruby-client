@@ -5,11 +5,13 @@ require 'parser'
 
 module SocketIO
 
-  def self.connect(host, options = {}, &block)
-    response = RestClient.get "http://#{host}/socket.io/1/"
-    # resonse should be in the form of sessionid:heartbeattimeout:closetimeout:supported stuff
+  # params [URI, String] uri
+  def self.connect(uri, options = {}, &block)
+    uri = URI(uri)
+    # handshke
+    response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
     response_array = response.split(':')
-    response_array = [host] + response_array << options
+    response_array = [uri] + response_array << options
     cli = Client.new(*response_array)
     cli.instance_eval(&block) if block
     cli.start
@@ -29,8 +31,10 @@ module SocketIO
     # The state of the Socket.IO socket can be disconnected, disconnecting, connected and connecting.
     # The transport connection can be closed, closing, open, and opening.
 
-    def initialize(host, session_id, heartbeat_timeout, connection_timeout, supported_transports, options = {})
-      @host = host
+    def initialize(uri, session_id, heartbeat_timeout, connection_timeout, supported_transports, options = {})
+      @uri = uri
+      namespace = uri.path.sub(%r~^/~, '')
+      @namespace =  namespace.empty? ? "socket.io" : namespace
       @session_id = session_id
       @hb_timeout = heartbeat_timeout
       @connect_timeout = connection_timeout
@@ -51,7 +55,8 @@ module SocketIO
 
     def connect_transport
       if @supported_transports.include? "websocket"
-        @transport = WebSocket.new("ws://#{@host}/socket.io/1/websocket/#{@session_id}")
+        scheme = @uri.scheme == "https" ? "wss" : "ws"
+        @transport = WebSocket.new("#{scheme}://#{@uri.host}:#{@uri.port}/socket.io/1/websocket/#{@session_id}", origin: @uri.to_s)
       else
         raise "We only support WebSockets.. and this server doesnt like web sockets.. O NO!!"
       end

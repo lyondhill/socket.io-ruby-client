@@ -1,4 +1,4 @@
-require 'socketIO'
+require 'SocketIO'
 
 describe Parser do
   
