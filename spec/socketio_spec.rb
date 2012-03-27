@@ -1,7 +1,7 @@
 describe SocketIO do
   
   before :all do
-    @client = SocketIO.connect("localhost", :sync => true)
+    @client = SocketIO.connect("http://localhost", :sync => true)
   end
 
   it "can send a heartbeat" do
