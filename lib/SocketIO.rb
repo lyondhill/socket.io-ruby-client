@@ -8,6 +8,7 @@ module SocketIO
   # params [URI, String] uri
   def self.connect(uri, options = {}, &block)
     uri = URI(uri)
+    puts "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
     # handshke
     response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
     puts response
