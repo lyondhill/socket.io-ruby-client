@@ -10,6 +10,7 @@ module SocketIO
     uri = URI(uri)
     # handshke
     response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
+    puts response
     response_array = response.split(':')
     response_array = [uri] + response_array << options
     cli = Client.new(*response_array)
@@ -82,9 +83,9 @@ module SocketIO
             message = JSON.parse(decoded[:data])
             @on_event[message['name']].call message['args'] if @on_event[message['name']]
           when '6'
-            @on_error.call decoded[:data] if @on_error
-          when '7'
             @on_ack.call if @on_ack
+          when '7'
+            @on_error.call decoded[:data] if @on_error
           when '8'
             @on_noop.call if @on_noop
           end
