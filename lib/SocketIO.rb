@@ -8,6 +8,7 @@ module SocketIO
   # params [URI, String] uri
   def self.connect(uri, options = {}, &block)
     uri = URI(uri)
+    options[:path] = uri.path
     # handshake
     response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
     response_array = response.split(':')
@@ -42,6 +43,7 @@ module SocketIO
       @options = options
       @reconnect = options[:reconnect]
       @on_event = {}
+      @path = options[:path]
     end
 
     def start
@@ -57,6 +59,7 @@ module SocketIO
       if @supported_transports.include? "websocket"
         scheme = @uri.scheme == "https" ? "wss" : "ws"
         @transport = WebSocket.new("#{scheme}://#{@uri.host}:#{@uri.port}/socket.io/1/websocket/#{@session_id}", origin: @uri.to_s)
+        @transport.send("1::#{@path}")
       else
         raise "We only support WebSockets.. and this server doesnt like web sockets.. O NO!!"
       end
