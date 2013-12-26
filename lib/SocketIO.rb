@@ -59,7 +59,6 @@ module SocketIO
       if @supported_transports.include? "websocket"
         scheme = @uri.scheme == "https" ? "wss" : "ws"
         @transport = WebSocket.new("#{scheme}://#{@uri.host}:#{@uri.port}/socket.io/1/websocket/#{@session_id}", origin: @uri.to_s)
-        @transport.send("1::#{@path}")
       else
         raise "We only support WebSockets.. and this server doesnt like web sockets.. O NO!!"
       end
