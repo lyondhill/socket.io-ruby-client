@@ -28,8 +28,8 @@ end
 
 ## Sync vs Async
 
-You can start the socket io syncronously and then continue with your work
-this crates threads so be careful.
+You can start the socket io syncronously and then continue with your work.
+This creates threads so be careful.
 
 ```ruby
 require 'SocketIO'
