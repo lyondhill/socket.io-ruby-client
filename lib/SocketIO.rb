@@ -44,6 +44,7 @@ module SocketIO
       @reconnect = options[:reconnect]
       @on_event = {}
       @path = options[:path]
+      @end_point = options[:end_point]
     end
 
     def start
@@ -73,6 +74,12 @@ module SocketIO
           when '0'
             @on_disconnect.call if @on_disconnect
           when '1'
+            if @end_point
+              unless @end_point == decoded[:end_point]
+                @transport.send("1::#{@end_point}:")
+                return
+              end
+            end
             @on_connect.call if @on_connect
           when '2'
             send_heartbeat
