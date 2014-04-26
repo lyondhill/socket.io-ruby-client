@@ -39,9 +39,13 @@ class WebSocket
 
         @server = params[:server]
         @socket = arg
-        line = gets().chomp()
+        line = gets()
+        if !line
+          raise(WebSocket::Error, "Client disconnected without sending anything.")
+        end
+        line = line.chomp()
         if !(line =~ /\AGET (\S+) HTTP\/1.1\z/n)
-          raise(WebSocket::Error, "invalid request: #{line}")
+          raise(WebSocket::Error, "Invalid request: #{line}")
         end
         @path = $1
         read_header()
@@ -79,7 +83,7 @@ class WebSocket
         end
 
         @path = (uri.path.empty? ? "/" : uri.path) + (uri.query ? "?" + uri.query : "")
-        host = uri.host + (uri.port == default_port ? "" : ":#{uri.port}")
+        host = uri.host + ((!uri.port || uri.port == default_port) ? "" : ":#{uri.port}")
         origin = params[:origin] || "http://#{uri.host}"
         key1 = generate_key()
         key2 = generate_key()
@@ -193,46 +197,51 @@ class WebSocket
           end
         
         else
-          begin
-            bytes = read(2).unpack("C*")
-            fin = (bytes[0] & 0x80) != 0
-            opcode = bytes[0] & 0x0f
-            mask = (bytes[1] & 0x80) != 0
-            plength = bytes[1] & 0x7f
-            if plength == 126
-              bytes = read(2)
-              plength = bytes.unpack("n")[0]
-            elsif plength == 127
-              bytes = read(8)
-              (high, low) = bytes.unpack("NN")
-              plength = high * (2 ** 32) + low
+          while true
+            begin
+              bytes = read(2).unpack("C*")
+              fin = (bytes[0] & 0x80) != 0
+              opcode = bytes[0] & 0x0f
+              mask = (bytes[1] & 0x80) != 0
+              plength = bytes[1] & 0x7f
+              if plength == 126
+                bytes = read(2)
+                plength = bytes.unpack("n")[0]
+              elsif plength == 127
+                bytes = read(8)
+                (high, low) = bytes.unpack("NN")
+                plength = high * (2 ** 32) + low
+              end
+              if @server && !mask
+                # Masking is required.
+                @socket.close()
+                raise(WebSocket::Error, "received unmasked data")
+              end
+              mask_key = mask ? read(4).unpack("C*") : nil
+              payload = read(plength)
+              payload = apply_mask(payload, mask_key) if mask
+              if WebSocket.debug
+                $stderr.printf("recv_frame> opcode:%d fin:%d payload:%p\n" % [opcode, fin ? 1 : 0, payload])
+              end
+              case opcode
+                when OPCODE_TEXT
+                  return force_encoding(payload, "UTF-8")
+                when OPCODE_BINARY
+                  raise(WebSocket::Error, "received binary data, which is not supported")
+                when OPCODE_CLOSE
+                  close(1005, "", :peer)
+                  return nil
+                when OPCODE_PING
+                  raise(WebSocket::Error, "received ping, which is not supported")
+                when OPCODE_PONG
+                  next
+                else
+                  raise(WebSocket::Error, "received unknown opcode: %d" % opcode)
+              end
+            rescue EOFError
+              return nil
             end
-            if @server && !mask
-              # Masking is required.
-              @socket.close()
-              raise(WebSocket::Error, "received unmasked data")
-            end
-            mask_key = mask ? read(4).unpack("C*") : nil
-            payload = read(plength)
-            payload = apply_mask(payload, mask_key) if mask
-            case opcode
-              when OPCODE_TEXT
-                return force_encoding(payload, "UTF-8")
-              when OPCODE_BINARY
-                raise(WebSocket::Error, "received binary data, which is not supported")
-              when OPCODE_CLOSE
-                close(1005, "", :peer)
-                return nil
-              when OPCODE_PING
-                raise(WebSocket::Error, "received ping, which is not supported")
-              when OPCODE_PONG
-              else
-                raise(WebSocket::Error, "received unknown opcode: %d" % opcode)
-            end
-          rescue EOFError
-            return nil
           end
-        
       end
     end
     
@@ -300,15 +309,24 @@ class WebSocket
         @header[$1] = $2
         @header[$1.downcase()] = $2
       end
+      if !@header["upgrade"]
+        raise(WebSocket::Error, "Upgrade header is missing")
+      end
       if !(@header["upgrade"] =~ /\AWebSocket\z/i)
         raise(WebSocket::Error, "invalid Upgrade: " + @header["upgrade"])
       end
-      if !(@header["connection"] =~ /\AUpgrade\z/i)
+      if !@header["connection"]
+        raise(WebSocket::Error, "Connection header is missing")
+      end
+      if @header["connection"].split(/,/).grep(/\A\s*Upgrade\s*\z/i).empty?
         raise(WebSocket::Error, "invalid Connection: " + @header["connection"])
       end
     end
 
     def send_frame(opcode, payload, mask)
+      if WebSocket.debug
+        $stderr.printf("send_frame> opcode:%d masked:%d payload:%p\n" % [opcode, mask ? 1 : 0, payload])
+      end
       payload = force_encoding(payload.dup(), "ASCII-8BIT")
       # Setting StringIO's encoding to ASCII-8BIT.
       buffer = StringIO.new(force_encoding("", "ASCII-8BIT"))
@@ -426,4 +444,153 @@ class WebSocket
       return ssl_socket
     end
 
+end
+
+
+class WebSocketServer
+
+    def initialize(params_or_uri, params = nil)
+      if params
+        uri = params_or_uri.is_a?(String) ? URI.parse(params_or_uri) : params_or_uri
+        params[:port] ||= uri.port
+        params[:accepted_domains] ||= [uri.host]
+      else
+        params = params_or_uri
+      end
+      @port = params[:port] || 80
+      @accepted_domains = params[:accepted_domains]
+      if !@accepted_domains
+        raise(ArgumentError, "params[:accepted_domains] is required")
+      end
+      if params[:host]
+        @tcp_server = TCPServer.open(params[:host], @port)
+      else
+        @tcp_server = TCPServer.open(@port)
+      end
+    end
+
+    attr_reader(:tcp_server, :port, :accepted_domains)
+
+    def run(&block)
+      while true
+        Thread.start(accept()) do |s|
+          begin
+            ws = create_web_socket(s)
+            yield(ws) if ws
+          rescue => ex
+            print_backtrace(ex)
+          ensure
+            begin
+              ws.close_socket() if ws
+            rescue
+            end
+          end
+        end
+      end
+    end
+
+    def accept()
+      return @tcp_server.accept()
+    end
+
+    def accepted_origin?(origin)
+      domain = origin_to_domain(origin)
+      return @accepted_domains.any?(){ |d| File.fnmatch(d, domain) }
+    end
+
+    def origin_to_domain(origin)
+      if origin == "null" || origin == "file://"  # local file
+        return "null"
+      else
+        return URI.parse(origin).host
+      end
+    end
+
+    def create_web_socket(socket)
+      ch = socket.getc()
+      if ch == ?<
+        # This is Flash socket policy file request, not an actual Web Socket connection.
+        send_flash_socket_policy_file(socket)
+        return nil
+      else
+        socket.ungetc(ch) if ch
+        return WebSocket.new(socket, :server => self)
+      end
+    end
+
+  private
+
+    def print_backtrace(ex)
+      $stderr.printf("%s: %s (%p)\n", ex.backtrace[0], ex.message, ex.class)
+      for s in ex.backtrace[1..-1]
+        $stderr.printf("        %s\n", s)
+      end
+    end
+
+    # Handles Flash socket policy file request sent when web-socket-js is used:
+    # http://github.com/gimite/web-socket-js/tree/master
+    def send_flash_socket_policy_file(socket)
+      socket.puts('<?xml version="1.0"?>')
+      socket.puts('<!DOCTYPE cross-domain-policy SYSTEM ' +
+        '"http://www.macromedia.com/xml/dtds/cross-domain-policy.dtd">')
+      socket.puts('<cross-domain-policy>')
+      for domain in @accepted_domains
+        next if domain == "file://"
+        socket.puts("<allow-access-from domain=\"#{domain}\" to-ports=\"#{@port}\"/>")
+      end
+      socket.puts('</cross-domain-policy>')
+      socket.close()
+    end
+
+end
+
+
+if __FILE__ == $0
+  Thread.abort_on_exception = true
+
+  if ARGV[0] == "server" && ARGV.size == 3
+
+    server = WebSocketServer.new(
+      :accepted_domains => [ARGV[1]],
+      :port => ARGV[2].to_i())
+    puts("Server is running at port %d" % server.port)
+    server.run() do |ws|
+      puts("Connection accepted")
+      puts("Path: #{ws.path}, Origin: #{ws.origin}")
+      if ws.path == "/"
+        ws.handshake()
+        while data = ws.receive()
+          printf("Received: %p\n", data)
+          ws.send(data)
+          printf("Sent: %p\n", data)
+        end
+      else
+        ws.handshake("404 Not Found")
+      end
+      puts("Connection closed")
+    end
+
+  elsif ARGV[0] == "client" && ARGV.size == 2
+
+    client = WebSocket.new(ARGV[1])
+    puts("Connected")
+    Thread.new() do
+      while data = client.receive()
+        printf("Received: %p\n", data)
+      end
+    end
+    $stdin.each_line() do |line|
+      data = line.chomp()
+      client.send(data)
+      printf("Sent: %p\n", data)
+    end
+
+  else
+
+    $stderr.puts("Usage:")
+    $stderr.puts("  ruby web_socket.rb server ACCEPTED_DOMAIN PORT")
+    $stderr.puts("  ruby web_socket.rb client ws://HOST:PORT/")
+    exit(1)
+
+  end
 end
