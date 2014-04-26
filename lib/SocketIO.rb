@@ -69,39 +69,45 @@ module SocketIO
     def start_recieve_loop
       @thread = Thread.new() do
         while data = @transport.receive()
-          decoded = Parser.decode(data)
-          case decoded[:type]
-          when '0'
-            @on_disconnect.call if @on_disconnect
-          when '1'
-            if @end_point
-              unless @end_point == decoded[:end_point]
-                @transport.send("1::#{@end_point}:")
-                return
-              end
-            end
-            @on_connect.call if @on_connect
-          when '2'
-            send_heartbeat
-            @on_heartbeat.call if @on_heartbeat
-          when '3'
-            @on_message.call decoded[:data] if @on_message
-          when '4'
-            @on_json_message.call decoded[:data] if @on_json_message
-          when '5'
-            message = JSON.parse(decoded[:data])
-            @on_event[message['name']].call message['args'] if @on_event[message['name']]
-          when '6'
-            @on_ack.call if @on_ack
-          when '7'
-            @on_error.call decoded[:data] if @on_error
-          when '8'
-            @on_noop.call if @on_noop
-          end
+          recieve_loop_body(Parser.decode(data))
         end
       end
       @thread
     end
+
+    private
+
+    def recieve_loop_body(decoded)
+      case decoded[:type]
+      when '0'
+        @on_disconnect.call if @on_disconnect
+      when '1'
+        if @end_point
+          unless @end_point == decoded[:end_point]
+            @transport.send("1::#{@end_point}:")
+          end
+        end
+        @on_connect.call if @on_connect
+      when '2'
+        send_heartbeat
+        @on_heartbeat.call if @on_heartbeat
+      when '3'
+        @on_message.call decoded[:data] if @on_message
+      when '4'
+        @on_json_message.call decoded[:data] if @on_json_message
+      when '5'
+        message = JSON.parse(decoded[:data])
+        @on_event[message['name']].call message['args'] if @on_event[message['name']]
+      when '6'
+        @on_ack.call if @on_ack
+      when '7'
+        @on_error.call decoded[:data] if @on_error
+      when '8'
+        @on_noop.call if @on_noop
+      end
+    end
+
+    public
 
     def disconnect
       @transport.send("0::")
