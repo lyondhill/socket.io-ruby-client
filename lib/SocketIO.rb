@@ -19,8 +19,6 @@ module SocketIO
   end
 
   class Client
-    VERSION = "0.0.2"
-
     [:INT, :TERM].each do |sig|
       Signal.trap(sig) do
         puts
