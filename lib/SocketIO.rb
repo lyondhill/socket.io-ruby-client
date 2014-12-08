@@ -9,8 +9,13 @@ module SocketIO
   def self.connect(uri, options = {}, &block)
     uri = URI(uri)
     options[:path] = uri.path
+
+    # support query data
+    query = options[:query]
+    query = "?#{query}" if query
+
     # handshake
-    response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/"
+    response = RestClient.get "#{uri.scheme}://#{uri.host}:#{uri.port}/socket.io/1/#{query}"
     response_array = response.split(':')
     response_array = [uri] + response_array << options
     cli = Client.new(*response_array)
