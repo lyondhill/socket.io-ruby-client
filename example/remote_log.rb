@@ -2,8 +2,8 @@ require 'socketIO'
 
 client = SocketIO.connect("localhost") do
   before_start do
-    on_message {|message| puts "incoming message: #{message}"}
-    on_disconnect {puts "I GOT A TDISCONNECT"}
+    on_message { |message| puts "incoming message: #{message}" }
+    on_disconnect { puts "I GOT A TDISCONNECT" }
   end
 
   after_start do
