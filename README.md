@@ -19,8 +19,8 @@ require 'SocketIO'
 
 client = SocketIO.connect("http://localhost") do
   before_start do
-    on_message {|message| puts "incoming message: #{message}"}
-    on_event('news') { |data| puts data.first} # data is an array fo things.
+    on_message { |message| puts "incoming message: #{message}" }
+    on_event('news') { |data| puts data.first } # data is an array fo things.
   end
 
 end
@@ -36,8 +36,8 @@ require 'SocketIO'
 
 client = SocketIO.connect("http://localhost", sync: true) do
   before_start do
-    on_message {|message| puts message}
-    on_disconnect {puts "I GOT A DISCONNECT"}
+    on_message { |message| puts message }
+    on_disconnect { puts "I GOT A DISCONNECT" }
   end
 
   after_start do
